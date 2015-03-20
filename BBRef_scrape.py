@@ -9,13 +9,14 @@ import os
 from os.path import join
 import pickle
 
-#checks if the string can be converted into a float
+# checks if the string can be converted into a float
 def is_number(s):
-        try:
-            float(s)
-            return True
-        except ValueError:
-            return False
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
+
 
 def convertNametoTID(name):
     N2ID = {'TOR': 28, 'BOS': 2, 'BKN': 3, 'NYK': 20, 'PHI': 23, 'IND': 12, 'CHI': 5, 'CLE': 6, 'DET': 9, 'MIL': 17,
@@ -23,6 +24,8 @@ def convertNametoTID(name):
             'LAC': 13, 'GSW': 10, 'PHO': 24, 'SAC': 26, 'LAL': 14, 'SAS': 27, 'HOU': 11, 'MEM': 15, 'DAL': 7, 'NOP': 19,
             'NOH': 19, 'NOK': 19, 'NJN': 3, 'CHO': 4}
     return N2ID[name]
+
+
 #Converts a row of a table in HTML into a list
 def rowToList(row):
     data_row = []
@@ -57,17 +60,21 @@ def playerRowToList(row):
         data_row.append(text)
     return data_row
 
+
 #convert the player URL into a playerID
 def URLtoPID(url):
-    return url[url.rfind('/')+1:url.find('.html')]
+    return url[url.rfind('/') + 1:url.find('.html')]
+
 
 #convert the boxscore URL into a gameID
 def URLtoGID(url):
-    return url[url.rfind('/')+1:url.find('.html')]
+    return url[url.rfind('/') + 1:url.find('.html')]
+
 
 #Takes in a table in the form of HTML and returns a pandas dataframe
 def tableToDF(table):
     pass
+
 
 def getPlayerBoxScore_fromTable(table):
     frame = pd.DataFrame()
@@ -91,7 +98,6 @@ def getPlayerBoxScore_fromTable(table):
     return frame
 
 
-
 #################################################################################################################
 #Helper functions above
 #Scraping functions below
@@ -105,7 +111,7 @@ def getFinalScores(soup):
     total_scores = soup.find_all('table', class_="nav_table stats_table")[0]
     header = total_scores.find_all('th', class_="align_right")
     header_lst = []
-    num_OT = len(header)-5
+    num_OT = len(header) - 5
     for h in header:
         header_lst.append(h.text)
     header_lst_tmp = [header_lst[x] for x in [0, 1, 2, 3, -1]]
@@ -113,17 +119,15 @@ def getFinalScores(soup):
     header_lst.insert(4, 'OT')
     header_lst.insert(6, '#OT')
     header_lst.insert(0, 'TeamID')
-    header_lst.insert(0, 'GameID') #gameID is added at the next level
+    header_lst.insert(0, 'GameID')  #gameID is added at the next level
     header_lst.append('H/A')
-
-
 
     rows = total_scores.find_all('tr')
 
     for i, r in enumerate(rows):
         data_row = rowToList(r)
         if data_row:
-            if len(data_row) > 6:#if there are multiple OTs, add up the points in OT
+            if len(data_row) > 6:  #if there are multiple OTs, add up the points in OT need to add
                 pass
             else:
                 data_row[0] = convertNametoTID(data_row[0])
@@ -169,7 +173,6 @@ def getFourFactors(soup):
     return frame
 
 
-
 #scrapes the boxscore for individual player stats and returns a pandas dataframe
 #returns in the form of [GameID, TeamID, PlayerID, MP, FG, FGA, FG%, 3P, 3PA, 3P%, FT, FTA, FT%, ORB, DRB, TRB, AST,
 # STL, BLK, TOV, PF, PTS, +/-, TS%, eFG%, 3PAr, FTr, ORB%, DRB%, TRB%, AST%, STL%, BLK%, TOV%, USG%, ORtg,
@@ -199,7 +202,6 @@ def getPlayerBoxScore(soup):
     Away_bscore.loc[:, 'H/A'] = 1
     Away_bscore.insert(1, 'TeamID')
     Away_bscore.loc[:, 'TeamID'] = Away
-
 
     return frame
 
@@ -233,6 +235,7 @@ def getPlayByPlay(soup):
 def getRefs(soup):
     pass
 
+
 def getShotCharts(soup):
     pass
 
@@ -242,7 +245,6 @@ bs = boxscores[0]
 print(bs)
 r = requests.get(bs)
 soup = BeautifulSoup(r.text)
-
 
 f = getPlayerBoxScore(soup)
 #f.loc[:, 'GameID'] = URLtoGID(bs)
