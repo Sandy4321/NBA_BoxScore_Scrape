@@ -173,12 +173,15 @@ def getFourFactors(soup):
     return frame
 
 
-#scrapes the boxscore for individual player stats and returns a pandas dataframe
-#returns in the form of [GameID, TeamID, PlayerID, MP, FG, FGA, FG%, 3P, 3PA, 3P%, FT, FTA, FT%, ORB, DRB, TRB, AST,
+# scrapes the boxscore for individual player stats and Team Stats and returns 2 pandas dataframes
+#returns players in the form of [GameID, TeamID, PlayerID, MP, FG, FGA, FG%, 3P, 3PA, 3P%, FT, FTA, FT%, ORB, DRB, TRB, AST,
 # STL, BLK, TOV, PF, PTS, +/-, TS%, eFG%, 3PAr, FTr, ORB%, DRB%, TRB%, AST%, STL%, BLK%, TOV%, USG%, ORtg,
 # DRtg, H/A (home = true, away = false)]
-def getPlayerBoxScore(soup):
-    frame = pd.DataFrame()
+# returns teams in the form of [GameID, TeamID, MP, FG, FGA, FG%, 3P, 3PA, 3P%, FT, FTA, FT%, ORB, DRB, TRB, AST,
+# STL, BLK, TOV, PF, PTS, +/-, TS%, eFG%, 3PAr, FTr, ORB%, DRB%, TRB%, AST%, STL%, BLK%, TOV%, USG%, ORtg,
+# DRtg, H/A (home = true, away = false)]
+def getBoxScoreStats(soup):
+
     tables = soup.find_all('table', class_="sortable  stats_table")
     Home = convertNametoTID(tables[2]['id'][:tables[2]['id'].find('_')])
     Home_basic = getPlayerBoxScore_fromTable(tables[2])
@@ -188,10 +191,12 @@ def getPlayerBoxScore(soup):
     Home_bscore = Home_basic.merge(Home_advanced, on='PlayerID')
     Home_bscore.loc[:, 'H/A'] = 1
 
-    Home_team_bscore = Home_bscore[Home_bscore.PlayerID == 'Team Totals']
+    Home_team_bscore = Home_bscore[Home_bscore.PlayerID == 'Team Totals']  # pulls out team totals
+    Home_bscore = Home_bscore[Home_bscore.PlayerID != 'Team Totals']  # removes team totals
+    Home_team_bscore = Home_team_bscore.rename(columns={'PlayerID': 'TeamID'})
+    Home_team_bscore['TeamID'] = Home
+    Home_bscore.insert(1, 'TeamID', Home)
 
-    Home_bscore.insert(1, 'TeamID')
-    Home_bscore.loc[:, 'TeamID'] = Home
 
     Away = convertNametoTID(tables[0]['id'][:tables[0]['id'].find('_')])
     Away_basic = getPlayerBoxScore_fromTable(tables[0])
@@ -199,20 +204,20 @@ def getPlayerBoxScore(soup):
     Away_basic = Away_basic.drop('H/A', 1)
     Away_advanced = Away_advanced.drop(['GameID', 'MP'], 1)
     Away_bscore = Away_basic.merge(Away_advanced, on='PlayerID')
-    Away_bscore.loc[:, 'H/A'] = 1
-    Away_bscore.insert(1, 'TeamID')
-    Away_bscore.loc[:, 'TeamID'] = Away
+    Away_bscore.loc[:, 'H/A'] = 0
 
-    return frame
+    Away_team_bscore = Away_bscore[Away_bscore.PlayerID == 'Team Totals']  # pulls out team totals
+    Away_bscore = Away_bscore[Away_bscore.PlayerID != 'Team Totals']  # removes team totals
+    Away_team_bscore = Away_team_bscore.rename(columns={'PlayerID': 'TeamID'})
+    Away_team_bscore['TeamID'] = Away
+    Away_bscore.insert(1, 'TeamID', Away)
 
+    Team_bscore = Home_team_bscore.append(Away_team_bscore, ignore_index=True)
+    Player_bscore = Home_bscore.append(Away_bscore, ignore_index=True)
 
-#scrapes the team total stats from the box score and returns a pandas dataframe
-#returns in the form of [GameID, TeamID, MP, FG, FGA, FG%, 3P, 3PA, 3P%, FT, FTA, FT%, ORB, DRB, TRB, AST,
-#  STL, BLK, TOV, PF, PTS, +/-,TS%, eFG%, 3PAr, FTr, ORB%, DRB%, TRB%, AST%, STL%, BLK%, TOV%, USG%, ORtg,
-# DRtg, H/A (home = true, away = false)]
-def getTeamTotals(soup):
-    pass
+    print(Player_bscore)
 
+    return (Player_bscore, Team_bscore)
 
 #scrapes the time of the start of the game returns a time object
 def getGameTime(soup):
@@ -236,7 +241,14 @@ def getRefs(soup):
     pass
 
 
+# scrapes the shot chart for the game and returns a pandas dataframe
+#returns in the form of [GameID, PlayerID, TeamID, Time, Xloc, Yloc, Shot Type (3/2), Result (make=1,miss=0)]
 def getShotCharts(soup):
+    pass
+
+
+# takes in a link for the box score and stores all values in a SQL database
+def scrapeBoxScore(link):
     pass
 
 
@@ -246,6 +258,6 @@ print(bs)
 r = requests.get(bs)
 soup = BeautifulSoup(r.text)
 
-f = getPlayerBoxScore(soup)
+f = getBoxScoreStats(soup)
 #f.loc[:, 'GameID'] = URLtoGID(bs)
 #print(f)
