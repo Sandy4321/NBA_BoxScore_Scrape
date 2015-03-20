@@ -1,12 +1,7 @@
-from datetime import datetime
+import time
 from bs4 import BeautifulSoup
 import pandas as pd
 import requests
-import matplotlib.pyplot as plt
-import time
-import random
-import os
-from os.path import join
 import pickle
 
 # checks if the string can be converted into a float
@@ -128,7 +123,7 @@ def getFinalScores(soup):
         data_row = rowToList(r)
         if data_row:
             if len(data_row) > 6:  #if there are multiple OTs, add up the points in OT need to add
-                pass
+                print(data_row)
             else:
                 data_row[0] = convertNametoTID(data_row[0])
                 data_row.insert(0, None)
@@ -215,9 +210,7 @@ def getBoxScoreStats(soup):
     Team_bscore = Home_team_bscore.append(Away_team_bscore, ignore_index=True)
     Player_bscore = Home_bscore.append(Away_bscore, ignore_index=True)
 
-    print(Player_bscore)
-
-    return (Player_bscore, Team_bscore)
+    return Player_bscore, Team_bscore
 
 #scrapes the time of the start of the game returns a time object
 def getGameTime(soup):
@@ -238,8 +231,11 @@ def getPlayByPlay(soup):
 #scrapes the refs for the game and returns a pandas dataframe
 #returns in the form of [GameID,refID, refID, refID]
 def getRefs(soup):
-    pass
-
+    table = soup.find_all('table', class_='margin_top small_text')[0]
+    row = table.find_all('tr')[0]
+    row_data = r.find_all('td')
+    for d in row_data:
+        pass  # FINISH NEXT
 
 # scrapes the shot chart for the game and returns a pandas dataframe
 #returns in the form of [GameID, PlayerID, TeamID, Time, Xloc, Yloc, Shot Type (3/2), Result (make=1,miss=0)]
@@ -258,6 +254,7 @@ print(bs)
 r = requests.get(bs)
 soup = BeautifulSoup(r.text)
 
-f = getBoxScoreStats(soup)
+refs = getRefs(soup)
+# f = getBoxScoreStats(soup)
 #f.loc[:, 'GameID'] = URLtoGID(bs)
 #print(f)
