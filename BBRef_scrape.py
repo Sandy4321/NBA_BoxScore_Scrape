@@ -43,7 +43,7 @@ def playerRowToList(row):
     for d in data:
         link = d.find_all('a')
         if link:
-            text = URLtoPID(link[0].get('href'))
+            text = URLtoID(link[0].get('href'))
         else:
             text = d.text
         if is_number(text):
@@ -56,13 +56,8 @@ def playerRowToList(row):
     return data_row
 
 
-#convert the player URL into a playerID
-def URLtoPID(url):
-    return url[url.rfind('/') + 1:url.find('.html')]
-
-
-#convert the boxscore URL into a gameID
-def URLtoGID(url):
+# convert the player URL into an ID
+def URLtoID(url):
     return url[url.rfind('/') + 1:url.find('.html')]
 
 
@@ -114,7 +109,7 @@ def getFinalScores(soup):
     header_lst.insert(4, 'OT')
     header_lst.insert(6, '#OT')
     header_lst.insert(0, 'TeamID')
-    header_lst.insert(0, 'GameID')  #gameID is added at the next level
+    header_lst.insert(0, 'GameID')  # gameID is added at the next level
     header_lst.append('H/A')
 
     rows = total_scores.find_all('tr')
@@ -122,17 +117,21 @@ def getFinalScores(soup):
     for i, r in enumerate(rows):
         data_row = rowToList(r)
         if data_row:
-            if len(data_row) > 6:  #if there are multiple OTs, add up the points in OT need to add
-                print(data_row)
+            if len(data_row) > 6:  # if there are multiple OTs, add up the points in OT need to add
+                OT_Points = sum(data_row[5:5 + num_OT])
+                while len(data_row) > 7:
+                    data_row.pop(6)
+                data_row[5] = OT_Points
             else:
                 data_row[0] = convertNametoTID(data_row[0])
-                data_row.insert(0, None)
-                data_row.insert(6, 0)
+                data_row.insert(5, 0)
+            data_row.insert(0, None)
+            data_row.append(num_OT)
+            if i == 2:
                 data_row.append(0)
-                if i == 2:
-                    data_row.append(0)
-                elif i == 3:
-                    data_row.append(1)
+            elif i == 3:
+                data_row.append(1)
+            data_row[1] = convertNametoTID(data_row[1])
             frame = frame.append(pd.Series(data_row), ignore_index=True)
     frame.columns = header_lst
     return frame
@@ -169,8 +168,8 @@ def getFourFactors(soup):
 
 
 # scrapes the boxscore for individual player stats and Team Stats and returns 2 pandas dataframes
-#returns players in the form of [GameID, TeamID, PlayerID, MP, FG, FGA, FG%, 3P, 3PA, 3P%, FT, FTA, FT%, ORB, DRB, TRB, AST,
-# STL, BLK, TOV, PF, PTS, +/-, TS%, eFG%, 3PAr, FTr, ORB%, DRB%, TRB%, AST%, STL%, BLK%, TOV%, USG%, ORtg,
+# returns players in the form of [GameID, TeamID, PlayerID, MP, FG, FGA, FG%, 3P, 3PA, 3P%, FT, FTA, FT%, ORB, DRB, TRB,
+# AST,STL, BLK, TOV, PF, PTS, +/-, TS%, eFG%, 3PAr, FTr, ORB%, DRB%, TRB%, AST%, STL%, BLK%, TOV%, USG%, ORtg,
 # DRtg, H/A (home = true, away = false)]
 # returns teams in the form of [GameID, TeamID, MP, FG, FGA, FG%, 3P, 3PA, 3P%, FT, FTA, FT%, ORB, DRB, TRB, AST,
 # STL, BLK, TOV, PF, PTS, +/-, TS%, eFG%, 3PAr, FTr, ORB%, DRB%, TRB%, AST%, STL%, BLK%, TOV%, USG%, ORtg,
@@ -212,14 +211,15 @@ def getBoxScoreStats(soup):
 
     return Player_bscore, Team_bscore
 
-#scrapes the time of the start of the game returns a time object
-def getGameTime(soup):
-    pass
-
-
 #scrapes the length of the game and returns a time object
 def getGameLength(soup):
-    pass
+    frame = pd.DataFrame()
+    table = soup.find_all('table', class_='margin_top small_text')[0]
+    row = table.find_all('tr')[2]
+    row_data = row.find_all('td')
+    frame = frame.append(pd.Series([None, row_data[1].text]), ignore_index=True)
+    frame.columns = ['GameID', 'GameLength']
+    return frame
 
 
 #scrapes the play by play data and returns a pandas dataframe
@@ -231,12 +231,15 @@ def getPlayByPlay(soup):
 #scrapes the refs for the game and returns a pandas dataframe
 #returns in the form of [GameID,refID, refID, refID]
 def getRefs(soup):
+    frame = pd.DataFrame()
+
     table = soup.find_all('table', class_='margin_top small_text')[0]
     row = table.find_all('tr')[0]
-    row_data = r.find_all('td')
+    row_data = row.find_all('a')
     for d in row_data:
-        pass  # FINISH NEXT
-
+        frame = frame.append(pd.Series([None, URLtoID(d['href']), d.text]), ignore_index=True)
+    frame.columns = ['GameID', 'RefID', 'Name']
+    return frame
 # scrapes the shot chart for the game and returns a pandas dataframe
 #returns in the form of [GameID, PlayerID, TeamID, Time, Xloc, Yloc, Shot Type (3/2), Result (make=1,miss=0)]
 def getShotCharts(soup):
@@ -249,12 +252,25 @@ def scrapeBoxScore(link):
 
 
 boxscores = pickle.load(open("boxscores.p", "rb"))
-bs = boxscores[0]
-print(bs)
+bs = 'http://www.basketball-reference.com/boxscores/200904010BOS.html'
+# print(bs)
 r = requests.get(bs)
 soup = BeautifulSoup(r.text)
 
-refs = getRefs(soup)
-# f = getBoxScoreStats(soup)
-#f.loc[:, 'GameID'] = URLtoGID(bs)
-#print(f)
+# refs = getRefs(soup)
+#refs.loc[:, 'GameID'] = URLtoID(bs)
+#print(refs)
+#players, teams = getBoxScoreStats(soup)
+#players.loc[:, 'GameID'] = URLtoID(bs)
+#teams.loc[:, 'GameID'] = URLtoID(bs)
+#print(teams)
+#print(players)
+#ff = getFourFactors(soup)
+#ff.loc[:, 'GameID'] = URLtoID(bs)
+#print(ff)
+#scores = getFinalScores(soup)
+#scores.loc[:, 'GameID'] = URLtoID(bs)
+#print(scores)
+length = getGameLength(soup)
+length.loc[:, 'GameID'] = URLtoID(bs)
+print(length)
