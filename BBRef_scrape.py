@@ -61,6 +61,15 @@ def URLtoID(url):
     return url[url.rfind('/') + 1:url.find('.html')]
 
 
+def BoxScoreURLtoPBP(url):
+    insert_ind = url.rfind('/')
+    return url[:insert_ind] + '/pbp' + url[insert_ind:]
+
+
+def BoxScoreURLtoShotChart(url):
+    insert_ind = url.rfind('/')
+    return url[:insert_ind] + '/shot-chart' + url[insert_ind:]
+
 #Takes in a table in the form of HTML and returns a pandas dataframe
 def tableToDF(table):
     pass
@@ -222,9 +231,18 @@ def getGameLength(soup):
     return frame
 
 
-#scrapes the play by play data and returns a pandas dataframe
-#STILL NEEED TO FIGURE OUT WHAT FORM I WANT THIS IN
+# scrapes the play by play data and returns a pandas dataframe
+# returns in the form of [GameID, playID (event#), Period (Q), Time Remaining, Time Elapsed, Play Length, Home TeamID,
+# Away TeamID, HomeScore, AwayScore, Home1 PlayerID, Home2 PlayerID, Home3 PlayerID, Home4 PlayerID, Home5 PlayerID,
+# Away1 PlayerID, Away2 PlayerID, Away3 PlayerID, Away4 PlayerID, Away5 PlayerID, PlayerTeamID, Event Type,
+# PlayerID, OppPlayerID, Assist, Block, Steal, Pts, Result (miss/make), /home(jump, Away (jump), Possession (jump),
+# In(sub), Out(sub), free throw, ft out of, reason, details]
 def getPlayByPlay(soup):
+    # table class_ = "no_highlight stats_table"
+    # col 0 = time remaining in quarter
+    # col 1 = away team action
+    # col 2 = home team action
+    # col 3 = home team action
     pass
 
 
@@ -241,7 +259,8 @@ def getRefs(soup):
     frame.columns = ['GameID', 'RefID', 'Name']
     return frame
 # scrapes the shot chart for the game and returns a pandas dataframe
-#returns in the form of [GameID, PlayerID, TeamID, Time, Xloc, Yloc, Shot Type (3/2), Result (make=1,miss=0)]
+# returns in the form of [GameID, PlayerID, TeamID, Time, Xloc, Yloc, Shot Type (3/2), Result (make=1,miss=0)]
+# May not be done from BBref due to the way the information is displayed possible from JSON on NBA.com
 def getShotCharts(soup):
     pass
 
@@ -253,9 +272,13 @@ def scrapeBoxScore(link):
 
 boxscores = pickle.load(open("boxscores.p", "rb"))
 bs = 'http://www.basketball-reference.com/boxscores/200904010BOS.html'
+pbp = BoxScoreURLtoPBP(bs)
+SC = BoxScoreURLtoShotChart(bs)
+print(pbp)
+print(SC)
 # print(bs)
-r = requests.get(bs)
-soup = BeautifulSoup(r.text)
+# r = requests.get(bs)
+#soup = BeautifulSoup(r.text)
 
 # refs = getRefs(soup)
 #refs.loc[:, 'GameID'] = URLtoID(bs)
@@ -271,6 +294,7 @@ soup = BeautifulSoup(r.text)
 #scores = getFinalScores(soup)
 #scores.loc[:, 'GameID'] = URLtoID(bs)
 #print(scores)
-length = getGameLength(soup)
-length.loc[:, 'GameID'] = URLtoID(bs)
-print(length)
+# length = getGameLength(soup)
+#length.loc[:, 'GameID'] = URLtoID(bs)
+#print(length)
+
