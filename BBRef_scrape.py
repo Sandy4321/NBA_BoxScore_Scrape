@@ -71,9 +71,15 @@ def BoxScoreURLtoShotChart(url):
     return url[:insert_ind] + '/shot-chart' + url[insert_ind:]
 
 #Takes in a table in the form of HTML and returns a pandas dataframe
-def tableToDF(table):
+def detailToDataRow(table):
     pass
 
+
+def timeToSeconds(time):
+    minutes = float(time[:time.find(':')]) * 60
+    seconds = float(time[time.find(':') + 1:time.find('.')])
+    msec = float(time[time.rfind('.'):])
+    return minutes + seconds + msec
 
 def getPlayerBoxScore_fromTable(table):
     frame = pd.DataFrame()
@@ -232,19 +238,96 @@ def getGameLength(soup):
 
 
 # scrapes the play by play data and returns a pandas dataframe
+# input is beautifulsoup soup object, and an array of starters
 # returns in the form of [GameID, playID (event#), Period (Q), Time Remaining, Time Elapsed, Play Length, Home TeamID,
 # Away TeamID, HomeScore, AwayScore, Home1 PlayerID, Home2 PlayerID, Home3 PlayerID, Home4 PlayerID, Home5 PlayerID,
 # Away1 PlayerID, Away2 PlayerID, Away3 PlayerID, Away4 PlayerID, Away5 PlayerID, PlayerTeamID, Event Type,
 # PlayerID, OppPlayerID, Assist, Block, Steal, Pts, Result (miss/make), /home(jump, Away (jump), Possession (jump),
 # In(sub), Out(sub), free throw, ft out of, reason, details]
-def getPlayByPlay(soup):
+# NOTE Time is stored in seconds, start of quarter = 720.0
+def getPlayByPlay(soup, starters, HomeID, AwayID):
     # table class_ = "no_highlight stats_table"
     # col 0 = time remaining in quarter
     # col 1 = away team action
     # col 2 = home team action
     # col 3 = home team action
-    pass
+    frame = pd.DataFrame()
+    # initialize row
+    gameID = None
+    playID = 0
+    period = 0
+    timeRemaining = None
+    timeElapsed = None
+    playLength = None
+    homeID = HomeID
+    awayID = AwayID
+    homeScore = 0
+    awayScore = 0
+    h1 = starters[0]
+    h2 = starters[1]
+    h3 = starters[2]
+    h4 = starters[3]
+    h5 = starters[4]
+    a1 = starters[5]
+    a2 = starters[6]
+    a3 = starters[7]
+    a4 = starters[8]
+    a5 = starters[9]
+    playTeamID = None
+    eventType = None
+    player = None
+    opponent = None
+    assist = None
+    block = None
+    steal = None
+    pts = 0
+    result = None
+    homeJump = None
+    awayJump = None
+    possession = None
+    subIn = None
+    subOut = None
+    ftNum = None
+    ftTotal = None
+    reason = None
+    details = ''
 
+    periodLength = 720.0
+    LastPlay = 720.0
+
+    header = ['GameID', 'PlayID', 'Period', 'TimeRemaining', 'TimeElapsed', 'PlayLength', 'HomeTeamID', 'AwayTeamID',
+              'HomeScore', 'AwayScore', 'H1', 'H2', 'H3', 'H4', 'H5', 'A1', 'A2', 'A3', 'A4', 'A5', 'PlayerTeamID',
+              'EventType', 'PlayerID', 'OpponentID', 'Assist', 'Block', 'Steal', 'PTS', 'Result', 'HomeJump',
+              'AwayJump',
+              'Possession', 'SubIn', 'SubOut', 'ftNum', 'ftTotal', 'reason', 'details']
+    # start scraping
+    table = soup.find_all('table', class_='no_highlight stats_table')[0]
+    rows = table.find_all('tr')
+
+
+    # check for Quarter:
+    for r in rows:
+        data = r.find_all('td')
+        if data:
+            if len(data) == 2:
+                if 'Start of' in data[1].text:
+                    period += 1
+                    if period > 4:
+                        periodLength = 300.0
+                    else:
+                        periodLength = 720.0
+
+            timeRemaining = timeToSeconds(data[0].text)
+            timeElapsed = periodLength - timeRemaining
+            playLength = LastPlay - timeRemaining
+
+            LastPlay = timeRemaining
+            framerow = [gameID, playID, period, timeRemaining, timeElapsed, playLength, homeID, awayID, homeScore,
+                        awayScore, h1, h2, h3, h4, h5, a1, a2, a3, a4, a5, playTeamID, eventType, player, opponent,
+                        assist, block, steal, pts, result, homeJump, awayJump, possession, subIn, subOut,
+                        ftNum, ftTotal, reason, details]
+            frame = frame.append(pd.Series(framerow), ignore_index=True)
+    return frame
 
 #scrapes the refs for the game and returns a pandas dataframe
 #returns in the form of [GameID,refID, refID, refID]
@@ -274,26 +357,31 @@ boxscores = pickle.load(open("boxscores.p", "rb"))
 bs = 'http://www.basketball-reference.com/boxscores/200904010BOS.html'
 pbp = BoxScoreURLtoPBP(bs)
 SC = BoxScoreURLtoShotChart(bs)
-print(pbp)
-print(SC)
+
+
 # print(bs)
-# r = requests.get(bs)
-#soup = BeautifulSoup(r.text)
+r = requests.get(pbp)
+soup = BeautifulSoup(r.text)
+Play_by_Play = getPlayByPlay(soup, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 1, 2)
 
 # refs = getRefs(soup)
 #refs.loc[:, 'GameID'] = URLtoID(bs)
 #print(refs)
+
 #players, teams = getBoxScoreStats(soup)
 #players.loc[:, 'GameID'] = URLtoID(bs)
 #teams.loc[:, 'GameID'] = URLtoID(bs)
 #print(teams)
 #print(players)
+
 #ff = getFourFactors(soup)
 #ff.loc[:, 'GameID'] = URLtoID(bs)
 #print(ff)
+
 #scores = getFinalScores(soup)
 #scores.loc[:, 'GameID'] = URLtoID(bs)
 #print(scores)
+
 # length = getGameLength(soup)
 #length.loc[:, 'GameID'] = URLtoID(bs)
 #print(length)
