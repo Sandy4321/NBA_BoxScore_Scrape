@@ -245,6 +245,7 @@ def getGameLength(soup):
 # PlayerID, OppPlayerID, Assist, Block, Steal, Pts, Result (miss/make), /home(jump, Away (jump), Possession (jump),
 # In(sub), Out(sub), free throw, ft out of, reason, details]
 # NOTE Time is stored in seconds, start of quarter = 720.0
+# Event Types: ORb, Drb, Stl, Ast, Miss, Make, Blk, Jump, Foul, Ft, Turnover, Sub, Tech, Timeout, Kick
 def getPlayByPlay(soup, starters, HomeID, AwayID):
     # table class_ = "no_highlight stats_table"
     # col 0 = time remaining in quarter
@@ -310,13 +311,27 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
         data = r.find_all('td')
         if data:
             if len(data) == 2:
+                # Start of period
                 if 'Start of' in data[1].text:
                     period += 1
                     if period > 4:
                         periodLength = 300.0
                     else:
                         periodLength = 720.0
+                # Jump Ball
+                elif 'Jump' in data[1].text:
+                    links = data[1].find_all('a')
+                    if len(links) == 3:
+                        homeJump = URLtoID(links[0]['href'])
+                        awayJump = URLtoID(links[1]['href'])
+                        possession = URLtoID(links[2]['href'])
+                    elif len(links) == 2:
+                        homeJump = URLtoID(links[0]['href'])
+                        awayJump = URLtoID(links[1]['href'])
+                    details = data[1].text
 
+            elif len(data) == 6:
+                pass
             timeRemaining = timeToSeconds(data[0].text)
             timeElapsed = periodLength - timeRemaining
             playLength = LastPlay - timeRemaining
@@ -327,6 +342,39 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                         assist, block, steal, pts, result, homeJump, awayJump, possession, subIn, subOut,
                         ftNum, ftTotal, reason, details]
             frame = frame.append(pd.Series(framerow), ignore_index=True)
+
+
+        # #############
+        # reset vars #
+        ##############
+
+        timeRemaining = None
+        timeElapsed = None
+        playLength = None
+        playTeamID = None
+        eventType = None
+        player = None
+        opponent = None
+        assist = None
+        block = None
+        steal = None
+        pts = 0
+        result = None
+        homeJump = None
+        awayJump = None
+        possession = None
+        subIn = None
+        subOut = None
+        ftNum = None
+        ftTotal = None
+        reason = None
+        details = ''
+
+        ##################
+        # End reset vars #
+        ##################
+
+
     return frame
 
 #scrapes the refs for the game and returns a pandas dataframe
