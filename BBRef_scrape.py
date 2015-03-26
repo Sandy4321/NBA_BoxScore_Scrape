@@ -21,7 +21,7 @@ def convertNametoTID(name):
     return N2ID[name]
 
 
-#Converts a row of a table in HTML into a list
+# Converts a row of a table in HTML into a list
 def rowToList(row):
     data_row = []
     data = row.find_all('td')
@@ -70,6 +70,7 @@ def BoxScoreURLtoShotChart(url):
     insert_ind = url.rfind('/')
     return url[:insert_ind] + '/shot-chart' + url[insert_ind:]
 
+
 #Takes in a table in the form of HTML and returns a pandas dataframe
 def detailToDataRow(table):
     pass
@@ -80,6 +81,7 @@ def timeToSeconds(time):
     seconds = float(time[time.find(':') + 1:time.find('.')])
     msec = float(time[time.rfind('.'):])
     return minutes + seconds + msec
+
 
 def getPlayerBoxScore_fromTable(table):
     frame = pd.DataFrame()
@@ -101,6 +103,12 @@ def getPlayerBoxScore_fromTable(table):
             frame = frame.append(pd.Series(data_row), ignore_index=True)
     frame.columns = header_lst
     return frame
+
+
+def convertTextToScores(text):
+    away = float(text[:text.find('-')])
+    home = float(text[text.find('-') + 1:])
+    return home, away
 
 
 #################################################################################################################
@@ -190,7 +198,6 @@ def getFourFactors(soup):
 # STL, BLK, TOV, PF, PTS, +/-, TS%, eFG%, 3PAr, FTr, ORB%, DRB%, TRB%, AST%, STL%, BLK%, TOV%, USG%, ORtg,
 # DRtg, H/A (home = true, away = false)]
 def getBoxScoreStats(soup):
-
     tables = soup.find_all('table', class_="sortable  stats_table")
     Home = convertNametoTID(tables[2]['id'][:tables[2]['id'].find('_')])
     Home_basic = getPlayerBoxScore_fromTable(tables[2])
@@ -205,7 +212,6 @@ def getBoxScoreStats(soup):
     Home_team_bscore = Home_team_bscore.rename(columns={'PlayerID': 'TeamID'})
     Home_team_bscore['TeamID'] = Home
     Home_bscore.insert(1, 'TeamID', Home)
-
 
     Away = convertNametoTID(tables[0]['id'][:tables[0]['id'].find('_')])
     Away_basic = getPlayerBoxScore_fromTable(tables[0])
@@ -225,6 +231,7 @@ def getBoxScoreStats(soup):
     Player_bscore = Home_bscore.append(Away_bscore, ignore_index=True)
 
     return Player_bscore, Team_bscore
+
 
 #scrapes the length of the game and returns a time object
 def getGameLength(soup):
@@ -253,6 +260,7 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
     # col 2 = home team action
     # col 3 = home team action
     frame = pd.DataFrame()
+    ind = None
     # initialize row
     gameID = None
     playID = 0
@@ -318,6 +326,7 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                         periodLength = 300.0
                     else:
                         periodLength = 720.0
+                    details = data[1].text
                 # Jump Ball
                 elif 'Jump' in data[1].text:
                     links = data[1].find_all('a')
@@ -329,9 +338,66 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                         homeJump = URLtoID(links[0]['href'])
                         awayJump = URLtoID(links[1]['href'])
                     details = data[1].text
-
             elif len(data) == 6:
-                pass
+                homeScore, awayScore = convertTextToScores(data[3].text)
+
+                if data[1].text != '':
+                    details = data[1].text
+                    playTeamID = awayID
+                    ind = 1
+                else:
+                    details = data[5].text
+                    playTeamID = homeID
+                    ind = 5
+                # Event Types: ORb, Drb, Stl, Ast, Miss, Make, Blk, Jump, Foul, Ft, Turnover, Sub, Tech, Timeout, Kick
+                if 'misses' in details:
+
+                    if 'block by' in details:
+                        pass
+                    if 'free throw' in details:
+                        pass
+                    if '3-pt' in details:
+                        pass
+                    elif '2-pt' in details:
+                        pass
+
+                elif 'makes' in details:
+
+                    if '3-pt' in details:
+                        pass
+                    elif '2-pt' in details:
+                        pass
+
+                elif 'Defensive rebound' in details:
+                    pass
+
+                elif 'Offensive rebound' in details:
+                    pass
+
+                elif 'Turnover by' in details:
+
+                    if 'steal' in details:
+                        pass
+                    else:
+                        pass
+
+                elif 'foul' in details:
+                    if 'Offensive' in details:
+                        pass
+                    elif 'Shooting' in details:
+                        pass
+                    elif 'Personal' in details:
+                        pass
+                    elif 'Technical' in details:
+                        pass
+                    elif 'Loose ball' in details:
+                        pass
+                elif 'timeout' in details:
+                    pass
+
+                elif 'enters the game' in details:
+                    pass
+
             timeRemaining = timeToSeconds(data[0].text)
             timeElapsed = periodLength - timeRemaining
             playLength = LastPlay - timeRemaining
@@ -374,8 +440,8 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
         # End reset vars #
         ##################
 
-
     return frame
+
 
 #scrapes the refs for the game and returns a pandas dataframe
 #returns in the form of [GameID,refID, refID, refID]
@@ -389,6 +455,8 @@ def getRefs(soup):
         frame = frame.append(pd.Series([None, URLtoID(d['href']), d.text]), ignore_index=True)
     frame.columns = ['GameID', 'RefID', 'Name']
     return frame
+
+
 # scrapes the shot chart for the game and returns a pandas dataframe
 # returns in the form of [GameID, PlayerID, TeamID, Time, Xloc, Yloc, Shot Type (3/2), Result (make=1,miss=0)]
 # May not be done from BBref due to the way the information is displayed possible from JSON on NBA.com
