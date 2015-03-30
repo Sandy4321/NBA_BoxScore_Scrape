@@ -111,10 +111,33 @@ def convertTextToScores(text):
     return home, away
 
 
+def getStarters(players, home, away):
+    homeTeam = players[(players['TeamID'] == home)]
+    awayTeam = players[(players['TeamID'] == away)]
+    starters = list(homeTeam.head(5)['PlayerID'])
+    starters = starters + list(awayTeam.head(5)['PlayerID'])
+    return starters
+
+
+def getTeamID(scores):
+    home = scores['TeamID'][1]
+    away = scores['TeamID'][0]
+    return home, away
+
+
+# ################################################################################################################
 #################################################################################################################
-#Helper functions above
-#Scraping functions below
 #################################################################################################################
+# #
+#                                                                                                               #
+#                                       Helper functions above                                                  #
+#                                      Scraping functions below                                                 #
+#                                                                                                               #
+#                                                                                                               #
+#################################################################################################################
+#################################################################################################################
+# ################################################################################################################
+
 
 # scrapes the final score of the game and returns a pandas dataframe
 # returns in the  form of [Game ID, Team ID, Q1, Q2, Q3, Q4, OT, Total, #OT, H/A (Home = true, away = false)]
@@ -272,16 +295,8 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
     awayID = AwayID
     homeScore = 0
     awayScore = 0
-    h1 = starters[0]
-    h2 = starters[1]
-    h3 = starters[2]
-    h4 = starters[3]
-    h5 = starters[4]
-    a1 = starters[5]
-    a2 = starters[6]
-    a3 = starters[7]
-    a4 = starters[8]
-    a5 = starters[9]
+    homeplayers = starters[0:5]
+    awayplayers = starters[5:10]
     playTeamID = None
     eventType = None
     player = None
@@ -351,28 +366,55 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                     ind = 5
                 # Event Types: ORb, Drb, Stl, Ast, Miss, Make, Blk, Jump, Foul, Ft, Turnover, Sub, Tech, Timeout, Kick
                 if 'misses' in details:
-
-                    if 'block by' in details:
-                        pass
-                    if 'free throw' in details:
-                        pass
+                    links = data[ind].find_all('a')
+                    player = URLtoID(links[0]['href'])
+                    result = 'miss'
+                    if len(links) == 2:
+                        block = URLtoID(links[1]['href'])
                     if '3-pt' in details:
-                        pass
+                        pts = 0
+                        eventType = '3pt'
                     elif '2-pt' in details:
-                        pass
+                        pts = 0
+                        eventType = '2pt'
+                    elif 'free throw' in details:
+                        pts = 1
+                        ftNumInfo = details[details.rfind('of') - 2:]
+                        ftNum = ftNumInfo[0]
+                        ftTotal = ftNumInfo[-1]
+                        eventType = 'ft'
 
                 elif 'makes' in details:
-
+                    links = data[ind].find_all('a')
+                    player = URLtoID(links[0]['href'])
+                    result = 'make'
+                    if len(links) == 2:
+                        assist = URLtoID(links[1]['href'])
                     if '3-pt' in details:
-                        pass
+                        pts = 3
+                        eventType = '3pt'
                     elif '2-pt' in details:
-                        pass
-
+                        pts = 2
+                        eventType = '2pt'
+                    elif 'free throw' in details:
+                        pts = 1
+                        ftNumInfo = details[details.rfind('of') - 2:]
+                        ftNum = ftNumInfo[0]
+                        ftTotal = ftNumInfo[-1]
+                        eventType = 'ft'
                 elif 'Defensive rebound' in details:
-                    pass
+                    if 'Team' in details:
+                        player = playTeamID
+                    else:
+                        player = URLtoID(data[ind].find_all('a')[0]['href'])
+                    eventType = 'Defensive rebound'
 
                 elif 'Offensive rebound' in details:
-                    pass
+                    if 'Team' in details:
+                        player = playTeamID
+                    else:
+                        player = URLtoID(data[ind].find_all('a')[0]['href'])
+                    eventType = 'Offensive rebound'
 
                 elif 'Turnover by' in details:
 
@@ -395,18 +437,38 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                 elif 'timeout' in details:
                     pass
 
+                #Gotta Fix substitutes during Quarters changes
                 elif 'enters the game' in details:
-                    pass
+                    links = data[ind].find_all('a')
+                    player = URLtoID(links[0]['href'])
+                    subIn = player
+                    subOut = URLtoID(links[1]['href'])
 
+                    if ind == 1:
+                        print(awayplayers)
+                        print(subIn)
+                        print(subOut)
+                        awayplayers[awayplayers.index(subOut)] = subIn
+                        print(awayplayers)
+                        print('')
+                    elif ind == 5:
+                        print(homeplayers)
+                        print(subIn)
+                        print(subOut)
+                        homeplayers[homeplayers.index(subOut)] = subIn
+                        print(homeplayers)
+                        print('')
+                homeScore, awayScore = convertTextToScores(data[3].text)
             timeRemaining = timeToSeconds(data[0].text)
             timeElapsed = periodLength - timeRemaining
             playLength = LastPlay - timeRemaining
 
             LastPlay = timeRemaining
             framerow = [gameID, playID, period, timeRemaining, timeElapsed, playLength, homeID, awayID, homeScore,
-                        awayScore, h1, h2, h3, h4, h5, a1, a2, a3, a4, a5, playTeamID, eventType, player, opponent,
-                        assist, block, steal, pts, result, homeJump, awayJump, possession, subIn, subOut,
-                        ftNum, ftTotal, reason, details]
+                        awayScore] + homeplayers + awayplayers + [playTeamID, eventType, player, opponent,
+                                                                  assist, block, steal, pts, result, homeJump, awayJump,
+                                                                  possession, subIn, subOut, ftNum, ftTotal, reason,
+                                                                  details]
             frame = frame.append(pd.Series(framerow), ignore_index=True)
 
 
@@ -466,39 +528,37 @@ def getShotCharts(soup):
 
 # takes in a link for the box score and stores all values in a SQL database
 def scrapeBoxScore(link):
-    pass
+    r = requests.get(link)
+    soupBS = BeautifulSoup(r.text)
+
+    refs = getRefs(soupBS)
+    refs.loc[:, 'GameID'] = URLtoID(link)
+
+    players, teams = getBoxScoreStats(soupBS)
+    players.loc[:, 'GameID'] = URLtoID(link)
+    teams.loc[:, 'GameID'] = URLtoID(link)
+
+    ff = getFourFactors(soupBS)
+    ff.loc[:, 'GameID'] = URLtoID(link)
+
+    scores = getFinalScores(soupBS)
+    scores.loc[:, 'GameID'] = URLtoID(link)
+
+    length = getGameLength(soupBS)
+    length.loc[:, 'GameID'] = URLtoID(link)
+
+    pbp = BoxScoreURLtoPBP(link)
+    SC = BoxScoreURLtoShotChart(link)
+
+    r = requests.get(pbp)
+    soupPBP = BeautifulSoup(r.text)
+
+    home, away = getTeamID(scores)
+    starters = getStarters(players, home, away)
+
+    Play_by_Play = getPlayByPlay(soupPBP, starters, home, away)
 
 
 boxscores = pickle.load(open("boxscores.p", "rb"))
 bs = 'http://www.basketball-reference.com/boxscores/200904010BOS.html'
-pbp = BoxScoreURLtoPBP(bs)
-SC = BoxScoreURLtoShotChart(bs)
-
-
-# print(bs)
-r = requests.get(pbp)
-soup = BeautifulSoup(r.text)
-Play_by_Play = getPlayByPlay(soup, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 1, 2)
-
-# refs = getRefs(soup)
-#refs.loc[:, 'GameID'] = URLtoID(bs)
-#print(refs)
-
-#players, teams = getBoxScoreStats(soup)
-#players.loc[:, 'GameID'] = URLtoID(bs)
-#teams.loc[:, 'GameID'] = URLtoID(bs)
-#print(teams)
-#print(players)
-
-#ff = getFourFactors(soup)
-#ff.loc[:, 'GameID'] = URLtoID(bs)
-#print(ff)
-
-#scores = getFinalScores(soup)
-#scores.loc[:, 'GameID'] = URLtoID(bs)
-#print(scores)
-
-# length = getGameLength(soup)
-#length.loc[:, 'GameID'] = URLtoID(bs)
-#print(length)
-
+scrapeBoxScore(bs)
