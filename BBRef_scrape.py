@@ -313,8 +313,13 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
     subOut = None
     ftNum = None
     ftTotal = None
+    drawFoul = None
+    foul = None
     reason = None
     details = ''
+
+    homeplayersSeen = []
+    awayplayersSeen = []
 
     periodLength = 720.0
     LastPlay = 720.0
@@ -322,8 +327,7 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
     header = ['GameID', 'PlayID', 'Period', 'TimeRemaining', 'TimeElapsed', 'PlayLength', 'HomeTeamID', 'AwayTeamID',
               'HomeScore', 'AwayScore', 'H1', 'H2', 'H3', 'H4', 'H5', 'A1', 'A2', 'A3', 'A4', 'A5', 'PlayerTeamID',
               'EventType', 'PlayerID', 'OpponentID', 'Assist', 'Block', 'Steal', 'PTS', 'Result', 'HomeJump',
-              'AwayJump',
-              'Possession', 'SubIn', 'SubOut', 'ftNum', 'ftTotal', 'reason', 'details']
+              'AwayJump', 'Possession', 'SubIn', 'SubOut', 'ftNum', 'ftTotal', 'draw foul', 'foul', 'reason', 'details']
     # start scraping
     table = soup.find_all('table', class_='no_highlight stats_table')[0]
     rows = table.find_all('tr')
@@ -336,14 +340,44 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
             if len(data) == 2:
                 # Start of period
                 if 'Start of' in data[1].text:
+                    eventType = 'Start period'
+                    if period > 1:
+                        frameQ = frame[frame[2] == period]
+                        homeReplace = list(set(homeplayersSeen) - set(homeplayers))
+                        homeToReplace = list(set(homeplayers) - set(homeplayersSeen))
+                        awayReplace = list(set(awayplayersSeen) - set(awayplayers))
+                        awayToReplace = list(set(awayplayers) - set(awayplayersSeen))
+                        for i, p in enumerate(homeToReplace):
+                            pReplace = homeReplace[i]
+                            awaycol = None
+                            for ind in range(15, 20):
+                                if p == frameQ.iloc[0, ind]:
+                                    awaycol = ind
+                                    break
+                            frameQ.loc[:, ind] = pReplace
+                            homeplayers[homeplayers.index(p)] = pReplace
+
+                        for i, p in enumerate(awayToReplace):
+                            pReplace = awayReplace[i]
+                            homecol = None
+                            for ind in range(10, 15):
+                                if p == frameQ.iloc[0, ind]:
+                                    homecol = ind
+                                    break
+                            frameQ.loc[:, ind] = pReplace
+                            awayplayers[awayplayers.index(p)] = pReplace
                     period += 1
                     if period > 4:
                         periodLength = 300.0
                     else:
                         periodLength = 720.0
                     details = data[1].text
+
+                    homeplayersSeen = []
+                    awayplayersSeen = []
                 # Jump Ball
                 elif 'Jump' in data[1].text:
+                    eventType = 'Jump'
                     links = data[1].find_all('a')
                     if len(links) == 3:
                         homeJump = URLtoID(links[0]['href'])
@@ -352,11 +386,21 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                     elif len(links) == 2:
                         homeJump = URLtoID(links[0]['href'])
                         awayJump = URLtoID(links[1]['href'])
+
+                    # check for players seen for change of quarter substitutions
+                    if homeJump not in homeplayersSeen:
+                        homeplayersSeen.append(homeJump)
+                    if awayJump not in awayplayersSeen:
+                        awayplayersSeen.append(awayJump)
+
+
+                    details = data[1].text
+                elif 'End' in data[1].text:
+                    eventType = 'End period'
                     details = data[1].text
             elif len(data) == 6:
                 homeScore, awayScore = convertTextToScores(data[3].text)
-
-                if data[1].text != '':
+                if len(data[1].text) > 1:
                     details = data[1].text
                     playTeamID = awayID
                     ind = 1
@@ -364,7 +408,7 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                     details = data[5].text
                     playTeamID = homeID
                     ind = 5
-                # Event Types: ORb, Drb, Stl, Ast, Miss, Make, Blk, Jump, Foul, Ft, Turnover, Sub, Tech, Timeout, Kick
+                # Event Types: ORb, Drb, Miss, Make, Jump, Foul, Ft, Turnover, Sub, Tech, Timeout, Kick
                 if 'misses' in details:
                     links = data[ind].find_all('a')
                     player = URLtoID(links[0]['href'])
@@ -384,6 +428,20 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                         ftTotal = ftNumInfo[-1]
                         eventType = 'ft'
 
+                    # check for players seen for change of quarter substitutions
+                    if ind == 5:
+                        if player not in homeplayersSeen:
+                            homeplayersSeen.append(player)
+                        if block:
+                            if block not in awayplayersSeen:
+                                awayplayersSeen.append(block)
+                    if ind == 1:
+                        if player not in awayplayersSeen:
+                            awayplayersSeen.append(player)
+                        if block:
+                            if block not in homeplayersSeen:
+                                homeplayersSeen.append(block)
+
                 elif 'makes' in details:
                     links = data[ind].find_all('a')
                     player = URLtoID(links[0]['href'])
@@ -398,44 +456,159 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                         eventType = '2pt'
                     elif 'free throw' in details:
                         pts = 1
-                        ftNumInfo = details[details.rfind('of') - 2:]
-                        ftNum = ftNumInfo[0]
-                        ftTotal = ftNumInfo[-1]
+                        if 'technical' not in details:
+                            ftNumInfo = details[details.rfind('of') - 2:]
+                            ftNum = ftNumInfo[0]
+                            ftTotal = ftNumInfo[-1]
+                        else:
+                            ftNum = 1
+                            ftTotal = 1
                         eventType = 'ft'
+
+                    # check for players seen for change of quarter substitutions
+                    if ind == 5:
+                        if player not in homeplayersSeen:
+                            homeplayersSeen.append(player)
+                        if assist:
+                            if assist not in homeplayersSeen:
+                                homeplayersSeen.append(assist)
+                    if ind == 1:
+                        if player not in awayplayersSeen:
+                            awayplayersSeen.append(player)
+                        if assist:
+                            if assist not in awayplayersSeen:
+                                awayplayersSeen.append(assist)
+
                 elif 'Defensive rebound' in details:
                     if 'Team' in details:
                         player = playTeamID
                     else:
                         player = URLtoID(data[ind].find_all('a')[0]['href'])
+                        # check for players seen for change of quarter substitutions
+                        if ind == 5:
+                            if player not in homeplayersSeen:
+                                homeplayersSeen.append(player)
+                        if ind == 1:
+                            if player not in awayplayersSeen:
+                                awayplayersSeen.append(player)
+
                     eventType = 'Defensive rebound'
+
+
 
                 elif 'Offensive rebound' in details:
                     if 'Team' in details:
                         player = playTeamID
                     else:
                         player = URLtoID(data[ind].find_all('a')[0]['href'])
+
+                        # check for players seen for change of quarter substitutions
+                        if ind == 5:
+                            if player not in homeplayersSeen:
+                                homeplayersSeen.append(player)
+                        if ind == 1:
+                            if player not in awayplayersSeen:
+                                awayplayersSeen.append(player)
+
                     eventType = 'Offensive rebound'
 
+
+
                 elif 'Turnover by' in details:
+                    if 'Team' in details:
+                        player = playTeamID
+                    else:
+                        player = URLtoID(data[ind].find_all('a')[0]['href'])
+                        # check for players seen for change of quarter substitutions
+                        if ind == 5:
+                            if player not in homeplayersSeen:
+                                homeplayersSeen.append(player)
+                        if ind == 1:
+                            if player not in awayplayersSeen:
+                                awayplayersSeen.append(player)
 
                     if 'steal' in details:
-                        pass
+                        eventType = 'steal'
+                        steal = URLtoID(data[ind].find_all('a')[1]['href'])
+                        # check for players seen for change of quarter substitutions
+                        if ind == 1:
+                            if steal not in homeplayersSeen:
+                                homeplayersSeen.append(steal)
+                        if ind == 5:
+                            if steal not in awayplayersSeen:
+                                awayplayersSeen.append(steal)
                     else:
-                        pass
+                        eventType = 'turnover'
+                    reason = details[details.find('(')+1:-1]
 
                 elif 'foul' in details:
+                    eventType = 'foul'
+                    if playTeamID == homeID:
+                        playTeamID = awayID
+                    else:
+                        playTeamID = homeID
+
+                    foul = URLtoID(data[ind].find_all('a')[0]['href'])
+                    drawFoul = URLtoID(data[ind].find_all('a')[1]['href'])
+                    player = foul
+
                     if 'Offensive' in details:
-                        pass
-                    elif 'Shooting' in details:
-                        pass
-                    elif 'Personal' in details:
-                        pass
+                        reason = 'Offensive'
+
+                        if ind == 1:
+                            if drawFoul not in homeplayersSeen:
+                                homeplayersSeen.append(drawFoul)
+                            if foul not in awayplayersSeen:
+                                awayplayersSeen.append(foul)
+                        if ind == 5:
+                            if drawFoul not in awayplayersSeen:
+                                awayplayersSeen.append(drawFoul)
+                            if foul not in homeplayersSeen:
+                                homeplayersSeen.append(foul)
+
                     elif 'Technical' in details:
-                        pass
-                    elif 'Loose ball' in details:
-                        pass
+                        reason = 'Technical'
+                        if ind == 1:
+                            if drawFoul not in homeplayersSeen:
+                                homeplayersSeen.append(drawFoul)
+                            if foul not in awayplayersSeen:
+                                awayplayersSeen.append(foul)
+                        if ind == 5:
+                            if drawFoul not in awayplayersSeen:
+                                awayplayersSeen.append(drawFoul)
+                            if foul not in homeplayersSeen:
+                                homeplayersSeen.append(foul)
+
+                    else:
+                        if 'Shooting' in details:
+                            reason = 'Shooting'
+                        elif 'Personal' in details:
+                            reason = 'Personal'
+                        elif 'Loose ball' in details:
+                            reason = 'Loose ball'
+
+                        if ind == 5:
+                            if drawFoul not in homeplayersSeen:
+                                homeplayersSeen.append(drawFoul)
+                            if foul not in awayplayersSeen:
+                                awayplayersSeen.append(foul)
+                        if ind == 1:
+                            if drawFoul not in awayplayersSeen:
+                                awayplayersSeen.append(drawFoul)
+                            if foul not in homeplayersSeen:
+                                homeplayersSeen.append(foul)
+
+
                 elif 'timeout' in details:
-                    pass
+                    eventType = 'timeout'
+                    if ind == 5:
+                        player = homeID
+                    elif ind == 1:
+                        player = awayID
+
+                elif 'Defensive three seconds' in details:
+                    player = URLtoID(data[ind].find_all('a')[0]['href'])
+                    eventType = 'turnover'
 
                 #Gotta Fix substitutes during Quarters changes
                 elif 'enters the game' in details:
@@ -443,21 +616,83 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                     player = URLtoID(links[0]['href'])
                     subIn = player
                     subOut = URLtoID(links[1]['href'])
-
+                    eventType = 'substitution'
                     if ind == 1:
-                        print(awayplayers)
-                        print(subIn)
-                        print(subOut)
+                        if subOut not in awayplayers:
+                            if subOut not in awayplayersSeen:
+                                awayplayersSeen.append(subOut)
+                            if None in awayplayers:
+                                replacePlayer = None
+                            else:
+                                removablePlayers = set(awayplayers) - set(awayplayersSeen)
+                                replacePlayer = list(removablePlayers)[0]
+                            frameQ = frame[frame[2] == period]
+                            col = None
+                            for ind in range(15, 20):
+                                if replacePlayer == frameQ.iloc[0, ind]:
+                                    col = ind
+                                    break
+                            frameQ.loc[:, ind] = subOut
+                            awayplayers[ind - 15] = subOut
+                        if subIn in awayplayers:
+                            if subOut not in awayplayersSeen:
+                                awayplayersSeen.append(subOut)
+                            removablePlayers = set(awayplayersSeen) - set(awayplayers)
+                            if removablePlayers:
+                                replacePlayer = list(removablePlayers)[0]
+                            else:
+                                replacePlayer = None
+                            frameQ = frame[frame[2] == period]
+                            col = None
+                            for ind in range(15, 20):
+                                if subIn == frameQ.iloc[0, ind]:
+                                    col = ind
+                                    break
+                            frameQ.loc[:, ind] = replacePlayer
+                            awayplayers[ind - 15] = replacePlayer
+                        if subOut not in awayplayersSeen:
+                            awayplayersSeen.append(subOut)
                         awayplayers[awayplayers.index(subOut)] = subIn
-                        print(awayplayers)
-                        print('')
+                        awayplayersSeen[awayplayersSeen.index(subOut)] = subIn
+
                     elif ind == 5:
-                        print(homeplayers)
-                        print(subIn)
-                        print(subOut)
+                        if subOut not in homeplayers:
+                            if subOut not in homeplayersSeen:
+                                homeplayersSeen.append(subOut)
+                            if None in homeplayers:
+                                replacePlayer = None
+                            else:
+                                removablePlayers = set(homeplayers) - set(homeplayersSeen)
+                                replacePlayer = list(removablePlayers)[0]
+                            frameQ = frame[frame[2] == period]
+                            col = None
+                            for ind in range(10, 15):
+                                if replacePlayer == frameQ.iloc[0, ind]:
+                                    col = ind
+                                    break
+                            frameQ.loc[:, ind] = subOut
+                            homeplayers[ind - 10] = subOut
+                        if subIn in homeplayers:
+                            if subOut not in homeplayersSeen:
+                                homeplayersSeen.append(subOut)
+                            removablePlayers = set(homeplayersSeen) - set(homeplayers)
+                            if removablePlayers:
+                                replacePlayer = list(removablePlayers)[0]
+                            else:
+                                replacePlayer = None
+                            frameQ = frame[frame[2] == period]
+                            col = None
+                            for ind in range(10, 15):
+                                if subIn == frameQ.iloc[0, ind]:
+                                    col = ind
+                                    break
+                            frameQ.loc[:, ind] = replacePlayer
+                            homeplayers[ind - 10] = replacePlayer
+                        if subOut not in homeplayersSeen:
+                            homeplayersSeen.append(subOut)
                         homeplayers[homeplayers.index(subOut)] = subIn
-                        print(homeplayers)
-                        print('')
+                        homeplayersSeen[homeplayersSeen.index(subOut)] = subIn
+
                 homeScore, awayScore = convertTextToScores(data[3].text)
             timeRemaining = timeToSeconds(data[0].text)
             timeElapsed = periodLength - timeRemaining
@@ -467,9 +702,11 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
             framerow = [gameID, playID, period, timeRemaining, timeElapsed, playLength, homeID, awayID, homeScore,
                         awayScore] + homeplayers + awayplayers + [playTeamID, eventType, player, opponent,
                                                                   assist, block, steal, pts, result, homeJump, awayJump,
-                                                                  possession, subIn, subOut, ftNum, ftTotal, reason,
+                                                                  possession, subIn, subOut, ftNum, ftTotal, drawFoul,
+                                                                  foul, reason,
                                                                   details]
             frame = frame.append(pd.Series(framerow), ignore_index=True)
+
 
 
         # #############
@@ -495,13 +732,15 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
         subOut = None
         ftNum = None
         ftTotal = None
+        drawFoul = None
+        foul = None
         reason = None
         details = ''
 
         ##################
         # End reset vars #
         ##################
-
+    frame.columns = header
     return frame
 
 
@@ -557,6 +796,7 @@ def scrapeBoxScore(link):
     starters = getStarters(players, home, away)
 
     Play_by_Play = getPlayByPlay(soupPBP, starters, home, away)
+
 
 
 boxscores = pickle.load(open("boxscores.p", "rb"))
