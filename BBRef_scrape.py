@@ -3,6 +3,8 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import requests
 import pickle
+import random
+import time
 
 # checks if the string can be converted into a float
 def is_number(s):
@@ -177,7 +179,6 @@ def getFinalScores(soup):
                 data_row.append(0)
             elif i == 3:
                 data_row.append(1)
-            data_row[1] = convertNametoTID(data_row[1])
             frame = frame.append(pd.Series(data_row), ignore_index=True)
     frame.columns = header_lst
     return frame
@@ -712,7 +713,7 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
         # #############
         # reset vars #
         ##############
-
+        playID += 1
         timeRemaining = None
         timeElapsed = None
         playLength = None
@@ -767,27 +768,42 @@ def getShotCharts(soup):
 
 # takes in a link for the box score and stores all values in a SQL database
 def scrapeBoxScore(link):
+    # print('start scraping')
     r = requests.get(link)
     soupBS = BeautifulSoup(r.text)
 
     refs = getRefs(soupBS)
     refs.loc[:, 'GameID'] = URLtoID(link)
+    # print('refs:')
+    #print(refs)
 
     players, teams = getBoxScoreStats(soupBS)
     players.loc[:, 'GameID'] = URLtoID(link)
     teams.loc[:, 'GameID'] = URLtoID(link)
+    # print('players and teams:')
+    #print(players)
+    #print(teams)
+
 
     ff = getFourFactors(soupBS)
     ff.loc[:, 'GameID'] = URLtoID(link)
+    # print('4factors:')
+    #print(ff)
+
 
     scores = getFinalScores(soupBS)
     scores.loc[:, 'GameID'] = URLtoID(link)
+    # print('scores:')
+    #print(scores)
+
 
     length = getGameLength(soupBS)
     length.loc[:, 'GameID'] = URLtoID(link)
+    # print('length:')
+    #print(length)
+
 
     pbp = BoxScoreURLtoPBP(link)
-    SC = BoxScoreURLtoShotChart(link)
 
     r = requests.get(pbp)
     soupPBP = BeautifulSoup(r.text)
@@ -796,9 +812,60 @@ def scrapeBoxScore(link):
     starters = getStarters(players, home, away)
 
     Play_by_Play = getPlayByPlay(soupPBP, starters, home, away)
+    Play_by_Play.loc[:, 'GameID'] = URLtoID(link)
+    # print('play by play:')
+    #print(Play_by_Play)
+
+    return refs, players, teams, ff, scores, length, Play_by_Play
 
 
+refs = pd.DataFrame()
+playerStats = pd.DataFrame()
+teamStats = pd.DataFrame()
+fourFactors = pd.DataFrame()
+finalScores = pd.DataFrame()
+gameLengths = pd.DataFrame()
+pbp = pd.DataFrame()
 
-boxscores = pickle.load(open("boxscores.p", "rb"))
-bs = 'http://www.basketball-reference.com/boxscores/200904010BOS.html'
-scrapeBoxScore(bs)
+failures = []
+failcount = 1
+bs = pickle.load(open("boxscores.p", "rb"))
+for i, b in enumerate(bs):
+    # print(i)
+    #print(b)
+    try:
+        refBS, playerBS, teamsBS, ffBS, scoresBS, lengthBS, PBPBS = scrapeBoxScore(b)
+        print('scrape complete')
+        refs = refs.append(refBS, ignore_index=True)
+        playerStats = playerStats.append(playerBS, ignore_index=True)
+        teamStats = teamStats.append(teamsBS, ignore_index=True)
+        fourFactors = fourFactors.append(ffBS, ignore_index=True)
+        finalScores = finalScores.append(scoresBS, ignore_index=True)
+        gameLengths = gameLengths.append(lengthBS, ignore_index=True)
+        pbp = pbp.append(PBPBS, ignore_index=True)
+        print('append complete')
+
+        pickle.dump(refs, open("Scrape Results/refs.p", "wb"))
+        pickle.dump(playerStats, open("Scrape Results/playerStats.p", "wb"))
+        pickle.dump(teamStats, open("Scrape Results/teamStats.p", "wb"))
+        pickle.dump(fourFactors, open("Scrape Results/fourFactors.p", "wb"))
+        pickle.dump(finalScores, open("Scrape Results/finalScores.p", "wb"))
+        pickle.dump(gameLengths, open("Scrape Results/gameLengths.p", "wb"))
+        pickle.dump(pbp, open("Scrape Results/pbp.p", "wb"))
+
+        print('dump complete')
+        if i + 1 % 1200 == 0:
+            R = random.randint(600, 900)
+            print('wait: ', R)
+            time.sleep(R)
+        else:
+            R = random.randint(5, 15)
+            print('wait: ', R)
+            time.sleep(R)
+
+    except:
+        print('Failed on Boxscore: ', b)
+        print('{0} failures so so far'.format(failcount))
+        failures.append(b)
+        failcount += 1
+        pickle.dump(failures, open("Scrape Results/fail.p", "wb"))
