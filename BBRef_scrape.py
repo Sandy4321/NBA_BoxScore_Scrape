@@ -5,6 +5,7 @@ import requests
 import pickle
 import random
 import time
+from sqlalchemy import *
 
 # checks if the string can be converted into a float
 def is_number(s):
@@ -170,6 +171,7 @@ def getFinalScores(soup):
                 while len(data_row) > 7:
                     data_row.pop(6)
                 data_row[5] = OT_Points
+                data_row[0] = convertNametoTID(data_row[0])
             else:
                 data_row[0] = convertNametoTID(data_row[0])
                 data_row.insert(5, 0)
@@ -179,6 +181,7 @@ def getFinalScores(soup):
                 data_row.append(0)
             elif i == 3:
                 data_row.append(1)
+
             frame = frame.append(pd.Series(data_row), ignore_index=True)
     frame.columns = header_lst
     return frame
@@ -319,6 +322,8 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
     reason = None
     details = ''
 
+    DubTech = False  # if true add a second row at the end!!
+
     homeplayersSeen = []
     awayplayersSeen = []
 
@@ -342,36 +347,39 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                 # Start of period
                 if 'Start of' in data[1].text:
                     eventType = 'Start period'
-                    if period > 1:
+                    if period > 0:
                         frameQ = frame[frame[2] == period]
                         homeReplace = list(set(homeplayersSeen) - set(homeplayers))
                         homeToReplace = list(set(homeplayers) - set(homeplayersSeen))
                         awayReplace = list(set(awayplayersSeen) - set(awayplayers))
                         awayToReplace = list(set(awayplayers) - set(awayplayersSeen))
-                        for i, p in enumerate(homeToReplace):
-                            pReplace = homeReplace[i]
-                            awaycol = None
-                            for ind in range(15, 20):
-                                if p == frameQ.iloc[0, ind]:
-                                    awaycol = ind
-                                    break
-                            frameQ.loc[:, ind] = pReplace
-                            homeplayers[homeplayers.index(p)] = pReplace
-
-                        for i, p in enumerate(awayToReplace):
-                            pReplace = awayReplace[i]
-                            homecol = None
-                            for ind in range(10, 15):
-                                if p == frameQ.iloc[0, ind]:
-                                    homecol = ind
-                                    break
-                            frameQ.loc[:, ind] = pReplace
-                            awayplayers[awayplayers.index(p)] = pReplace
+                        if homeToReplace and homeReplace:
+                            for i, p in enumerate(homeToReplace):
+                                pReplace = homeReplace[i]
+                                awaycol = None
+                                for ind in range(15, 20):
+                                    if p == frameQ.iloc[0, ind]:
+                                        awaycol = ind
+                                        break
+                                frameQ.loc[:, ind] = pReplace
+                                homeplayers[homeplayers.index(p)] = pReplace
+                        if awayToReplace and awayReplace:
+                            for i, p in enumerate(awayToReplace):
+                                pReplace = awayReplace[i]
+                                homecol = None
+                                for ind in range(10, 15):
+                                    if p == frameQ.iloc[0, ind]:
+                                        homecol = ind
+                                        break
+                                frameQ.loc[:, ind] = pReplace
+                                awayplayers[awayplayers.index(p)] = pReplace
                     period += 1
                     if period > 4:
                         periodLength = 300.0
+                        LastPlay = 300.0
                     else:
                         periodLength = 720.0
+                        LastPlay = 720.0
                     details = data[1].text
 
                     homeplayersSeen = []
@@ -423,7 +431,7 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                         pts = 0
                         eventType = '2pt'
                     elif 'free throw' in details:
-                        pts = 1
+                        pts = 0
                         ftNumInfo = details[details.rfind('of') - 2:]
                         ftNum = ftNumInfo[0]
                         ftTotal = ftNumInfo[-1]
@@ -529,7 +537,7 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                                 awayplayersSeen.append(player)
 
                     if 'steal' in details:
-                        eventType = 'steal'
+                        eventType = 'turnover'
                         steal = URLtoID(data[ind].find_all('a')[1]['href'])
                         # check for players seen for change of quarter substitutions
                         if ind == 1:
@@ -542,29 +550,56 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                         eventType = 'turnover'
                     reason = details[details.find('(')+1:-1]
 
+                elif 'Delay tech' in details:
+                    eventType = 'turnover'
+                    player = playTeamID
+
+                elif "Double technical foul" in details:
+                    eventType = "foul"
+                    reason = 'Technical'
+                    if len(data[ind].find_all('a')) > 0:
+                        foul = URLtoID(data[ind].find_all('a')[0]['href'])
+                    else:
+                        foul = None
+                    if len(data[ind].find_all('a')) > 1:
+                        drawFoul = URLtoID(data[ind].find_all('a')[1]['href'])
+                    else:
+                        drawFoul = None
+                    player = foul
+
                 elif 'foul' in details:
                     eventType = 'foul'
-                    if playTeamID == homeID:
-                        playTeamID = awayID
+                    if 'Technical foul by Team' in details:
+                        player = playTeamID
                     else:
-                        playTeamID = homeID
+                        if playTeamID == homeID:
+                            playTeamID = awayID
+                        else:
+                            playTeamID = homeID
 
-                    foul = URLtoID(data[ind].find_all('a')[0]['href'])
-                    drawFoul = URLtoID(data[ind].find_all('a')[1]['href'])
-                    player = foul
+                        if len(data[ind].find_all('a')) > 0:
+                            foul = URLtoID(data[ind].find_all('a')[0]['href'])
+                        else:
+                            foul = None
+                        if len(data[ind].find_all('a')) > 1:
+                            drawFoul = URLtoID(data[ind].find_all('a')[1]['href'])
+                        else:
+                            drawFoul = None
+
+                        player = foul
 
                     if 'Offensive' in details:
                         reason = 'Offensive'
 
                         if ind == 1:
-                            if drawFoul not in homeplayersSeen:
+                            if drawFoul and (drawFoul not in homeplayersSeen):
                                 homeplayersSeen.append(drawFoul)
-                            if foul not in awayplayersSeen:
+                            if foul and (foul not in awayplayersSeen):
                                 awayplayersSeen.append(foul)
                         if ind == 5:
-                            if drawFoul not in awayplayersSeen:
+                            if drawFoul and (drawFoul not in awayplayersSeen):
                                 awayplayersSeen.append(drawFoul)
-                            if foul not in homeplayersSeen:
+                            if foul and (foul not in homeplayersSeen):
                                 homeplayersSeen.append(foul)
 
                     elif 'Technical' in details:
@@ -589,14 +624,14 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                             reason = 'Loose ball'
 
                         if ind == 5:
-                            if drawFoul not in homeplayersSeen:
+                            if drawFoul and (drawFoul not in homeplayersSeen):
                                 homeplayersSeen.append(drawFoul)
-                            if foul not in awayplayersSeen:
+                            if foul and (foul not in awayplayersSeen):
                                 awayplayersSeen.append(foul)
                         if ind == 1:
-                            if drawFoul not in awayplayersSeen:
+                            if drawFoul and (drawFoul not in awayplayersSeen):
                                 awayplayersSeen.append(drawFoul)
-                            if foul not in homeplayersSeen:
+                            if foul and (foul not in homeplayersSeen):
                                 homeplayersSeen.append(foul)
 
 
@@ -609,7 +644,14 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
 
                 elif 'Defensive three seconds' in details:
                     player = URLtoID(data[ind].find_all('a')[0]['href'])
-                    eventType = 'turnover'
+                    eventType = '3 seconds'
+
+                    if ind == 5:
+                        if player not in awayplayersSeen:
+                            awayplayersSeen.append(player)
+                    if ind == 1:
+                        if player not in homeplayersSeen:
+                            homeplayersSeen.append(player)
 
                 #Gotta Fix substitutes during Quarters changes
                 elif 'enters the game' in details:
@@ -619,9 +661,9 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                     subOut = URLtoID(links[1]['href'])
                     eventType = 'substitution'
                     if ind == 1:
+                        if subOut not in awayplayersSeen:
+                            awayplayersSeen.append(subOut)
                         if subOut not in awayplayers:
-                            if subOut not in awayplayersSeen:
-                                awayplayersSeen.append(subOut)
                             if None in awayplayers:
                                 replacePlayer = None
                             else:
@@ -633,11 +675,10 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                                 if replacePlayer == frameQ.iloc[0, ind]:
                                     col = ind
                                     break
-                            frameQ.loc[:, ind] = subOut
+                            ind2 = list(frameQ.index)
+                            frame.loc[ind2, ind] = subOut
                             awayplayers[ind - 15] = subOut
                         if subIn in awayplayers:
-                            if subOut not in awayplayersSeen:
-                                awayplayersSeen.append(subOut)
                             removablePlayers = set(awayplayersSeen) - set(awayplayers)
                             if removablePlayers:
                                 replacePlayer = list(removablePlayers)[0]
@@ -649,17 +690,16 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                                 if subIn == frameQ.iloc[0, ind]:
                                     col = ind
                                     break
-                            frameQ.loc[:, ind] = replacePlayer
+                            ind2 = list(frameQ.index)
+                            frame.loc[ind2, ind] = replacePlayer
                             awayplayers[ind - 15] = replacePlayer
-                        if subOut not in awayplayersSeen:
-                            awayplayersSeen.append(subOut)
                         awayplayers[awayplayers.index(subOut)] = subIn
                         awayplayersSeen[awayplayersSeen.index(subOut)] = subIn
 
                     elif ind == 5:
+                        if subOut not in homeplayersSeen:
+                            homeplayersSeen.append(subOut)
                         if subOut not in homeplayers:
-                            if subOut not in homeplayersSeen:
-                                homeplayersSeen.append(subOut)
                             if None in homeplayers:
                                 replacePlayer = None
                             else:
@@ -671,11 +711,10 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                                 if replacePlayer == frameQ.iloc[0, ind]:
                                     col = ind
                                     break
-                            frameQ.loc[:, ind] = subOut
+                            ind2 = list(frameQ.index)
+                            frame.loc[ind2, ind] = subOut
                             homeplayers[ind - 10] = subOut
                         if subIn in homeplayers:
-                            if subOut not in homeplayersSeen:
-                                homeplayersSeen.append(subOut)
                             removablePlayers = set(homeplayersSeen) - set(homeplayers)
                             if removablePlayers:
                                 replacePlayer = list(removablePlayers)[0]
@@ -687,13 +726,12 @@ def getPlayByPlay(soup, starters, HomeID, AwayID):
                                 if subIn == frameQ.iloc[0, ind]:
                                     col = ind
                                     break
-                            frameQ.loc[:, ind] = replacePlayer
+                            ind2 = list(frameQ.index)
+                            frame.loc[ind2, ind] = replacePlayer
                             homeplayers[ind - 10] = replacePlayer
-                        if subOut not in homeplayersSeen:
-                            homeplayersSeen.append(subOut)
+
                         homeplayers[homeplayers.index(subOut)] = subIn
                         homeplayersSeen[homeplayersSeen.index(subOut)] = subIn
-
                 homeScore, awayScore = convertTextToScores(data[3].text)
             timeRemaining = timeToSeconds(data[0].text)
             timeElapsed = periodLength - timeRemaining
@@ -766,43 +804,202 @@ def getShotCharts(soup):
     pass
 
 
+def generateBSfromPBPA(pbp):
+    header = ['PlayerID', 'MP', 'FG', 'FGA', '3P', '3PA', 'FT', 'FTA', 'ORB', 'DRB', 'TRB', 'AST', 'STL', 'BLK', 'TOV',
+              'PF', 'PTS']
+    frame = pd.DataFrame()
+
+    h1 = list(pbp['H1'])
+    h2 = list(pbp['H2'])
+    h3 = list(pbp['H3'])
+    h4 = list(pbp['H4'])
+    h5 = list(pbp['H5'])
+    homeplayers = set(h1 + h2 + h3 + h4 + h5)
+
+    a1 = list(pbp['A1'])
+    a2 = list(pbp['A2'])
+    a3 = list(pbp['A3'])
+    a4 = list(pbp['A4'])
+    a5 = list(pbp['A5'])
+    awayplayers = set(a1 + a2 + a3 + a4 + a5)
+
+    for h in homeplayers:
+        player = h
+        MP = 0
+        FG = 0
+        FGA = 0
+        ThreeP = 0
+        ThreePA = 0
+        FT = 0
+        FTA = 0
+        ORB = 0
+        DRB = 0
+        TRB = 0
+        AST = 0
+        STL = 0
+        BLK = 0
+        TOV = 0
+        PF = 0
+        PTS = 0
+        playerPBP = pbp[(pbp['H1'] == h) | (pbp['H2'] == h) | (pbp['H3'] == h) | (pbp['H4'] == h) | (pbp['H5'] == h)]
+        MP = sum(playerPBP['PlayLength'])
+        m, s = divmod(MP, 60)
+        MP = str(int(m)) + ':' + str(int(s)).zfill(2)
+
+        playerAssists = playerPBP[(playerPBP['Assist'] == h)]
+        AST = len(playerAssists.index)
+
+        playerBlocks = playerPBP[(playerPBP['Block'] == h)]
+        BLK = len(playerBlocks.index)
+
+        playerSteal = playerPBP[(playerPBP['Steal'] == h)]
+        STL = len(playerSteal.index)
+
+        playerShots = playerPBP[
+            (playerPBP['PlayerID'] == h) & ((playerPBP['Result'] == 'make') | (playerPBP['Result'] == 'miss'))]
+        FGA = len(playerShots[(playerShots['EventType'] != 'ft')])
+        FG = len(playerShots[(playerShots['Result'] == 'make') & (playerShots['EventType'] != 'ft')])
+        ThreePA = len(playerShots[playerShots['EventType'] == '3pt'])
+        ThreeP = len(playerShots[(playerShots['EventType'] == '3pt') & (playerShots['Result'] == 'make')])
+        FTA = len(playerShots[(playerShots['EventType'] == 'ft')])
+        FT = len(playerShots[(playerShots['EventType'] == 'ft') & (playerShots['Result'] == 'make')])
+        PTS = sum(playerShots['PTS'])
+
+        PF = len(playerPBP[(playerPBP['foul'] == h) & (playerPBP['reason'] != 'Technical')])
+
+        TOV = len(playerPBP[(playerPBP['EventType'] == 'turnover') & (playerPBP['PlayerID'] == h)])
+
+        ORB = len(playerPBP[(playerPBP['EventType'] == 'Offensive rebound') & (playerPBP['PlayerID'] == h)])
+
+        DRB = len(playerPBP[(playerPBP['EventType'] == 'Defensive rebound') & (playerPBP['PlayerID'] == h)])
+
+        TRB = ORB + DRB
+
+        frame = frame.append(
+            pd.Series([h, MP, FG, FGA, ThreeP, ThreePA, FT, FTA, ORB, DRB, TRB, AST, STL, BLK, TOV, PF, PTS]),
+            ignore_index=True)
+
+    for a in awayplayers:
+        player = a
+        mp = 0
+        fg = 0
+        fga = 0
+        threeP = 0
+        threePA = 0
+        FT = 0
+        FTA = 0
+        ORB = 0
+        DRB = 0
+        TRB = 0
+        AST = 0
+        STL = 0
+        BLK = 0
+        TOV = 0
+        PF = 0
+        PTS = 0
+        playerPBP = pbp[(pbp['A1'] == a) | (pbp['A2'] == a) | (pbp['A3'] == a) | (pbp['A4'] == a) | (pbp['A5'] == a)]
+        MP = sum(playerPBP['PlayLength'])
+        m, s = divmod(MP, 60)
+        MP = str(int(m)) + ':' + str(int(s)).zfill(2)
+        playerAssists = playerPBP[(playerPBP['Assist'] == a)]
+        AST = len(playerAssists.index)
+
+        playerBlocks = playerPBP[(playerPBP['Block'] == a)]
+        BLK = len(playerBlocks.index)
+
+        playerSteal = playerPBP[(playerPBP['Steal'] == a)]
+        STL = len(playerSteal.index)
+
+        playerShots = playerPBP[
+            (playerPBP['PlayerID'] == a) & ((playerPBP['Result'] == 'make') | (playerPBP['Result'] == 'miss'))]
+        FGA = len(playerShots[(playerShots['EventType'] != 'ft')])
+        FG = len(playerShots[(playerShots['Result'] == 'make') & (playerShots['EventType'] != 'ft')])
+        ThreePA = len(playerShots[playerShots['EventType'] == '3pt'])
+        ThreeP = len(playerShots[(playerShots['EventType'] == '3pt') & (playerShots['Result'] == 'make')])
+        FTA = len(playerShots[(playerShots['EventType'] == 'ft')])
+        FT = len(playerShots[(playerShots['EventType'] == 'ft') & (playerShots['Result'] == 'make')])
+        PTS = sum(playerShots['PTS'])
+
+        PF = len(playerPBP[(playerPBP['foul'] == a) & (playerPBP['reason'] != 'Technical')])
+
+        TOV = len(playerPBP[(playerPBP['EventType'] == 'turnover') & (playerPBP['PlayerID'] == a)])
+
+        ORB = len(playerPBP[(playerPBP['EventType'] == 'Offensive rebound') & (playerPBP['PlayerID'] == a)])
+
+        DRB = len(playerPBP[(playerPBP['EventType'] == 'Defensive rebound') & (playerPBP['PlayerID'] == a)])
+
+        TRB = ORB + DRB
+
+        frame = frame.append(
+            pd.Series([a, MP, FG, FGA, ThreeP, ThreePA, FT, FTA, ORB, DRB, TRB, AST, STL, BLK, TOV, PF, PTS]),
+            ignore_index=True)
+
+    frame.columns = header
+    return frame
+
+
+def compareBoxScores(bs, pbpbs):
+    cols = pbpbs.columns
+    players = bs['PlayerID']
+    failures = pd.DataFrame()
+    for p in players:
+        row1 = bs[bs['PlayerID'] == p]
+        row2 = pbpbs[pbpbs['PlayerID'] == p]
+        for c in cols:
+            val1 = row1.loc[:, c].values[0]
+            val2 = row2.loc[:, c].values[0]
+            if type('') == type(val1) and ':' in val1:
+                timeLow = int(val1[:val1.find(':')]) - 1
+                timeHigh = int(val1[:val1.find(':')]) + 1
+                testTime = int(val2[:val2.find(':')])
+                if timeLow > testTime or testTime > timeHigh:
+                    failures = failures.append(pd.Series([p, c, val1, val2]), ignore_index=True)
+            elif val1 != val2:
+                failures = failures.append(pd.Series([p, c, val1, val2]), ignore_index=True)
+    if not failures.empty:
+        failures.columns = ['PlayerID', 'Category', 'BS', 'PBP']
+    return failures
+
+
 # takes in a link for the box score and stores all values in a SQL database
 def scrapeBoxScore(link):
-    # print('start scraping')
+    print('start scraping')
     r = requests.get(link)
     soupBS = BeautifulSoup(r.text)
 
     refs = getRefs(soupBS)
     refs.loc[:, 'GameID'] = URLtoID(link)
-    # print('refs:')
+    print('refs:')
     #print(refs)
 
     players, teams = getBoxScoreStats(soupBS)
     players.loc[:, 'GameID'] = URLtoID(link)
     teams.loc[:, 'GameID'] = URLtoID(link)
-    # print('players and teams:')
+    print('players and teams:')
     #print(players)
     #print(teams)
 
 
     ff = getFourFactors(soupBS)
     ff.loc[:, 'GameID'] = URLtoID(link)
-    # print('4factors:')
+    print('4factors:')
     #print(ff)
 
 
     scores = getFinalScores(soupBS)
     scores.loc[:, 'GameID'] = URLtoID(link)
-    # print('scores:')
+    print('scores:')
     #print(scores)
 
 
     length = getGameLength(soupBS)
     length.loc[:, 'GameID'] = URLtoID(link)
-    # print('length:')
+    print('length:')
     #print(length)
 
-
+    R = random.randint(1, 5)
+    print('wait: ', R)
+    time.sleep(R)
     pbp = BoxScoreURLtoPBP(link)
 
     r = requests.get(pbp)
@@ -813,11 +1010,24 @@ def scrapeBoxScore(link):
 
     Play_by_Play = getPlayByPlay(soupPBP, starters, home, away)
     Play_by_Play.loc[:, 'GameID'] = URLtoID(link)
-    # print('play by play:')
+    print('play by play:')
     #print(Play_by_Play)
 
     return refs, players, teams, ff, scores, length, Play_by_Play
 
+
+"""
+with open('Scrape Results/fail.p', 'rb') as handle:
+        bs = pickle.load(handle)
+for i, test in enumerate(bs):
+    test = bs[2]
+    print(i)
+    print(test)
+    refs, players, teams, ff, scores, length, Play_by_Play = scrapeBoxScore(test)
+    R = random.randint(5, 15)
+    print('wait: ', R)
+    time.sleep(R)
+"""
 
 refs = pd.DataFrame()
 playerStats = pd.DataFrame()
@@ -827,45 +1037,65 @@ finalScores = pd.DataFrame()
 gameLengths = pd.DataFrame()
 pbp = pd.DataFrame()
 
+engine = create_engine()
+
 failures = []
 failcount = 1
 bs = pickle.load(open("boxscores.p", "rb"))
 for i, b in enumerate(bs):
     # print(i)
     #print(b)
-    try:
-        refBS, playerBS, teamsBS, ffBS, scoresBS, lengthBS, PBPBS = scrapeBoxScore(b)
-        print('scrape complete')
-        refs = refs.append(refBS, ignore_index=True)
-        playerStats = playerStats.append(playerBS, ignore_index=True)
-        teamStats = teamStats.append(teamsBS, ignore_index=True)
-        fourFactors = fourFactors.append(ffBS, ignore_index=True)
-        finalScores = finalScores.append(scoresBS, ignore_index=True)
-        gameLengths = gameLengths.append(lengthBS, ignore_index=True)
-        pbp = pbp.append(PBPBS, ignore_index=True)
-        print('append complete')
+    # try:
+    refBS, playerBS, teamsBS, ffBS, scoresBS, lengthBS, PBPBS = scrapeBoxScore(b)
+    print('scrape complete')
+    refs = refs.append(refBS, ignore_index=True)
+    playerStats = playerStats.append(playerBS, ignore_index=True)
+    teamStats = teamStats.append(teamsBS, ignore_index=True)
+    fourFactors = fourFactors.append(ffBS, ignore_index=True)
+    finalScores = finalScores.append(scoresBS, ignore_index=True)
+    gameLengths = gameLengths.append(lengthBS, ignore_index=True)
+    pbp = pbp.append(PBPBS, ignore_index=True)
+    print('append complete')
 
-        pickle.dump(refs, open("Scrape Results/refs.p", "wb"))
-        pickle.dump(playerStats, open("Scrape Results/playerStats.p", "wb"))
-        pickle.dump(teamStats, open("Scrape Results/teamStats.p", "wb"))
-        pickle.dump(fourFactors, open("Scrape Results/fourFactors.p", "wb"))
-        pickle.dump(finalScores, open("Scrape Results/finalScores.p", "wb"))
-        pickle.dump(gameLengths, open("Scrape Results/gameLengths.p", "wb"))
-        pickle.dump(pbp, open("Scrape Results/pbp.p", "wb"))
+    pbpbs = generateBSfromPBPA(pbp)
+    fail = compareBoxScores(playerStats, pbpbs)
+    print(fail)
+    if fail.empty:
+        refs.to_sql("Scrape Results/refs")
+        playerStats.to_sql("Scrape Results/playerStats")
+        teamStats.to_sql("Scrape Results/teamStats")
+        fourFactors.to_sql("Scrape Results/fourFactors")
+        finalScores.to_sql("Scrape Results/finalScores")
+        gameLengths.to_sql("Scrape Results/gameLengths")
+        pbp.to_sql("Scrape Results/pbp")
+    else:
+        failures.append((b, fail))
 
-        print('dump complete')
-        if i + 1 % 1200 == 0:
-            R = random.randint(600, 900)
-            print('wait: ', R)
-            time.sleep(R)
-        else:
-            R = random.randint(5, 15)
-            print('wait: ', R)
-            time.sleep(R)
-
+    print('dump complete')
+    if i + 1 % 1200 == 0:
+        R = random.randint(600, 900)
+        print('wait: ', R)
+        time.sleep(R)
+    else:
+        R = random.randint(5, 15)
+        print('wait: ', R)
+        time.sleep(R)
+    """
     except:
         print('Failed on Boxscore: ', b)
         print('{0} failures so so far'.format(failcount))
         failures.append(b)
         failcount += 1
         pickle.dump(failures, open("Scrape Results/fail.p", "wb"))
+    """
+"""
+with open('boxscores.p', 'rb') as handle:
+        bs = pickle.load(handle)
+
+b = bs[0]
+print(b)
+refBS, playerBS, teamsBS, ffBS, scoresBS, lengthBS, PBP = scrapeBoxScore(b)
+PBPBS = generateBSfromPBPA(PBP)
+failures = compareBoxScores(playerBS, PBPBS)
+print(failures)
+"""
